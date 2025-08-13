@@ -58,13 +58,39 @@ function loadKB(): Omit<DocumentChunk, "embedding">[] {
   return docs;
 }
 
+async function createEmbeddings(texts: string[]): Promise<number[][]> {
+  const response = await openai.embeddings.create({
+    model: "text-embedding-3-small",
+    input: texts,
+  });
+
+  return response.data.map((item) => item.embedding);
+}
+
+async function initKB(): Promise<void> {
+  console.log("🔄 Loading knowledge base...");
+  const docs = loadKB();
+
+  const texts = docs.map((doc) => doc.content);
+  const embeddings = await createEmbeddings(texts);
+
+  knowledgeBase = docs.map((doc, index) => ({
+    ...doc,
+    embedding: embeddings[index]!,
+  }));
+
+  console.log(
+    `✅ Knowledge base ready with ${knowledgeBase.length} documents\n`
+  );
+}
+
 let conversationHistory =
   "You are a helpful AI assistant. Be conversational, friendly, and remember what user tells you throghout our chat.\n\n";
 
 console.log("🤖 ChatGPT Clone 1.0");
 console.log("💡 Type 'exit' or 'quit' to end chat\n");
 
-loadKB();
+initKB();
 
 while (true) {
   const userMessage = await rl.question("You: ");
