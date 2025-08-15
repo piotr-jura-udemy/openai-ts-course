@@ -4,6 +4,7 @@ import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { join } from "node:path";
 import { readdirSync, readFileSync } from "node:fs";
+import { similarity } from "ml-distance";
 
 const openai = new OpenAI();
 const rl = createInterface({ input, output });
@@ -84,9 +85,38 @@ async function initKB(): Promise<void> {
   );
 }
 
-let conversationHistory =
-  "You are a helpful AI assistant. Be conversational, friendly, and remember what user tells you throghout our chat.\n\n";
+async function searchKB(
+  query: string,
+  topK: number = 2
+): Promise<Array<DocumentChunk & { similarity: number }>> {
+  if (knowledgeBase.length === 0) return [];
 
+  const embeddings = await createEmbeddings([query]);
+  const queryEmbedding = embeddings[0]!;
+
+  const results = knowledgeBase
+    .map((doc) => ({
+      ...doc,
+      similarity: similarity.cosine(queryEmbedding, doc.embedding),
+    }))
+    .sort((a, b) => b.similarity - a.similarity)
+    .slice(0, topK);
+
+  // 1.0
+  // 0.8-0.9 very similar
+  // 0.5-0.7 related content
+  // >= 0.3 loosly related
+  // < 0.3 mostly unrelated
+  return results.filter((r) => r.similarity > 0.3);
+}
+
+let conversationHistory: { role: string; content: string }[] = [
+  {
+    role: "system",
+    content:
+      "You are a helpful AI assistant. Be conversational, friendly, and remember what user tells you throghout our chat.",
+  },
+];
 console.log("🤖 ChatGPT Clone 1.0");
 console.log("💡 Type 'exit' or 'quit' to end chat\n");
 
@@ -103,29 +133,33 @@ while (true) {
     break;
   }
 
-  conversationHistory += `User: ${userMessage}\n`;
-  const prompt = conversationHistory + "Assistant: ";
+  conversationHistory.push({
+    role: "user",
+    content: userMessage,
+  });
 
   console.log("\n🤖 AI:");
 
-  const stream = await openai.responses.create({
+  const stream = await openai.chat.completions.create({
     model: "gpt-4o",
-    input: prompt,
+    messages: conversationHistory as any,
     stream: true,
   });
 
   let aiResponse = "";
 
-  for await (const event of stream) {
-    if (event.type === "response.output_text.delta") {
-      process.stdout.write(event.delta);
-      aiResponse += event.delta;
-    }
+  for await (const chunk of stream) {
+    const content = chunk.choices[0]?.delta?.content || "";
+    process.stdout.write(content);
+    aiResponse += content;
   }
 
   console.log("\n\n");
 
-  conversationHistory += `Assistant: ${aiResponse}\n\n`;
+  conversationHistory.push({
+    role: "assistant",
+    content: aiResponse,
+  });
 }
 
 rl.close();
