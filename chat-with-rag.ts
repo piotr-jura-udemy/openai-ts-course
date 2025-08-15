@@ -133,9 +133,23 @@ while (true) {
     break;
   }
 
+  // Here
+  const docs = await searchKB(userMessage);
+  let contextMessage = userMessage;
+
+  if (docs.length > 0) {
+    console.log(`\n📕 Found ${docs.length} relevant document(s)`);
+
+    const context = docs.map((doc) => doc.content).join("\n\n");
+
+    contextMessage = `${userMessage}
+    Relevant company information: 
+    ${context}`;
+  }
+
   conversationHistory.push({
     role: "user",
-    content: userMessage,
+    content: contextMessage,
   });
 
   console.log("\n🤖 AI:");
